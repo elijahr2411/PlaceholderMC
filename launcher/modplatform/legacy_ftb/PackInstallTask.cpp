@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 /*
- *  PolyMC - Minecraft Launcher
+ *  Prism Launcher - Minecraft Launcher
  *  Copyright (C) 2022 Sefa Eyeoglu <contact@scrumplex.net>
  *
  *  This program is free software: you can redistribute it and/or modify
@@ -48,6 +48,8 @@
 #include "Application.h"
 #include "BuildConfig.h"
 
+#include "net/ApiDownload.h"
+
 namespace LegacyFTB {
 
 PackInstallTask::PackInstallTask(shared_qobject_ptr<QNetworkAccessManager> network, Modpack pack, QString version)
@@ -68,20 +70,22 @@ void PackInstallTask::downloadPack()
     setProgress(1, 4);
     setAbortable(false);
 
-    archivePath = QString("%1/%2/%3").arg(m_pack.dir, m_version.replace(".", "_"), m_pack.file);
-
+    auto path = QString("%1/%2/%3").arg(m_pack.dir, m_version.replace(".", "_"), m_pack.file);
+    auto entry = APPLICATION->metacache()->resolveEntry("FTBPacks", path);
+    entry->setStale(true);
+    archivePath = entry->getFullPath();
     netJobContainer.reset(new NetJob("Download FTB Pack", m_network));
     QString url;
     if (m_pack.type == PackType::Private) {
-        url = QString(BuildConfig.LEGACY_FTB_CDN_BASE_URL + "privatepacks/%1").arg(archivePath);
+        url = QString(BuildConfig.LEGACY_FTB_CDN_BASE_URL + "privatepacks/%1").arg(path);
     } else {
-        url = QString(BuildConfig.LEGACY_FTB_CDN_BASE_URL + "modpacks/%1").arg(archivePath);
+        url = QString(BuildConfig.LEGACY_FTB_CDN_BASE_URL + "modpacks/%1").arg(path);
     }
-    netJobContainer->addNetAction(Net::Download::makeFile(url, archivePath));
+    netJobContainer->addNetAction(Net::ApiDownload::makeCached(url, entry));
 
     connect(netJobContainer.get(), &NetJob::succeeded, this, &PackInstallTask::unzip);
     connect(netJobContainer.get(), &NetJob::failed, this, &PackInstallTask::emitFailed);
-    connect(netJobContainer.get(), &NetJob::stepProgress, this, &PackInstallTask::propogateStepProgress);
+    connect(netJobContainer.get(), &NetJob::stepProgress, this, &PackInstallTask::propagateStepProgress);
     connect(netJobContainer.get(), &NetJob::aborted, this, &PackInstallTask::emitAborted);
 
     netJobContainer->start();
